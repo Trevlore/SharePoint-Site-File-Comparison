@@ -43,7 +43,7 @@ param(
     [string]$Site2Name = "Site 2",
     
     [Parameter(Mandatory=$false)]
-    [string]$OutputPath = "SharePoint-Comparison-Report.html"
+    [string]$OutputPath = ""
 )
 
 # Get script directory
@@ -57,9 +57,26 @@ if (-not (Test-Path $getFilesScript)) {
     exit 1
 }
 
-# Temporary CSV files
-$site1Csv = Join-Path $env:TEMP "site1_files_$(Get-Date -Format 'yyyyMMddHHmmss').csv"
-$site2Csv = Join-Path $env:TEMP "site2_files_$(Get-Date -Format 'yyyyMMddHHmmss').csv"
+# Create folders for data and reports
+$dataFolder = Join-Path $scriptDir "Data"
+$reportsFolder = Join-Path $scriptDir "Reports"
+
+if (-not (Test-Path $dataFolder)) {
+    New-Item -Path $dataFolder -ItemType Directory -Force | Out-Null
+    Write-Host "Created Data folder: $dataFolder" -ForegroundColor Gray
+}
+
+if (-not (Test-Path $reportsFolder)) {
+    New-Item -Path $reportsFolder -ItemType Directory -Force | Out-Null
+    Write-Host "Created Reports folder: $reportsFolder" -ForegroundColor Gray
+}
+
+# Generate timestamp for this run
+$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+
+# CSV files with timestamps
+$site1Csv = Join-Path $dataFolder "Site1_$timestamp.csv"
+$site2Csv = Join-Path $dataFolder "Site2_$timestamp.csv"
 
 try {
     Write-Host "==========================================" -ForegroundColor Cyan
@@ -147,6 +164,14 @@ try {
     
     # Step 4: Generate HTML report
     Write-Host "`n[4/4] Generating HTML report..." -ForegroundColor Yellow
+    
+    # Set output path with timestamp if not provided
+    if ([string]::IsNullOrEmpty($OutputPath)) {
+        $OutputPath = Join-Path $reportsFolder "SharePoint-Comparison_$timestamp.html"
+    } elseif (-not [System.IO.Path]::IsPathRooted($OutputPath)) {
+        # If relative path provided, put it in reports folder
+        $OutputPath = Join-Path $reportsFolder $OutputPath
+    }
     
     $reportDate = Get-Date -Format "MMMM dd, yyyy HH:mm:ss"
     
@@ -587,7 +612,9 @@ try {
     Write-Host "`n==========================================" -ForegroundColor Green
     Write-Host "Report generated successfully!" -ForegroundColor Green
     Write-Host "==========================================" -ForegroundColor Green
-    Write-Host "Location: $OutputPath" -ForegroundColor Cyan
+    Write-Host "Report: $OutputPath" -ForegroundColor Cyan
+    Write-Host "Site 1 CSV: $site1Csv" -ForegroundColor Gray
+    Write-Host "Site 2 CSV: $site2Csv" -ForegroundColor Gray
     Write-Host "`nOpening report in default browser..." -ForegroundColor Gray
     
     # Open the report in default browser
@@ -598,11 +625,6 @@ try {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
 } finally {
-    # Clean up temporary CSV files
-    if (Test-Path $site1Csv) {
-        Remove-Item $site1Csv -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-Path $site2Csv) {
-        Remove-Item $site2Csv -Force -ErrorAction SilentlyContinue
-    }
+    # Note: CSV files are now saved in the Data folder for historical tracking
+    # They are not deleted
 }
