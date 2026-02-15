@@ -20,15 +20,14 @@ if (-not (Test-Path $reportsFolder)) {
 # Generate timestamp for this run
 $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 
-# Look for existing test CSV files or use the ones in testdata folder
+# Look for combined test CSV file
 $testDataFolder = Join-Path $scriptDir "testdata"
-if (Test-Path $testDataFolder) {
-    $site1Csv = Join-Path $testDataFolder "test-site1.csv"
-    $site2Csv = Join-Path $testDataFolder "test-site2.csv"
-} else {
-    # Fall back to root folder for backward compatibility
-    $site1Csv = Join-Path $scriptDir "test-site1.csv"
-    $site2Csv = Join-Path $scriptDir "test-site2.csv"
+$combinedCsv = Join-Path $testDataFolder "test-combined.csv"
+
+if (-not (Test-Path $combinedCsv)) {
+    Write-Host "Error: test-combined.csv not found in testdata folder." -ForegroundColor Red
+    Write-Host "Expected location: $combinedCsv" -ForegroundColor Yellow
+    exit 1
 }
 
 # Output path for report with timestamp
@@ -43,21 +42,34 @@ if (-not (Test-Path $reportGenerator)) {
 }
 . $reportGenerator
 
-$Site1Name = "Current Iteration Site"
-$Site2Name = "Last Iteration Site"
-$Site1Url = "https://contoso.sharepoint.com/sites/production"
-$Site2Url = "https://contoso.sharepoint.com/sites/archive"
+$Site1Name = "Last Iteration Site"
+$Site2Name = "Current Iteration Site"
+$Site1Url = "https://contoso.sharepoint.com/sites/lastiteration"
+$Site2Url = "https://contoso.sharepoint.com/sites/currentiteration"
 
 Write-Host "Loading test data..." -ForegroundColor Cyan
 
-$testdataFolder = Join-Path $scriptDir "testdata"
-if (-not (Test-Path $testdataFolder)) {
-    Write-Host "Error: testdata folder not found in the script directory." -ForegroundColor Red
-    Write-Host "Expected location: $testdataFolder" -ForegroundColor Yellow
-    exit 1
+# Import combined CSV and split by SourceSite
+$allFiles = Import-Csv $combinedCsv
+
+# Get unique site names from the data
+$uniqueSites = $allFiles | Select-Object -ExpandProperty SourceSite -Unique
+
+if ($uniqueSites.Count -lt 2) {
+    Write-Host "Warning: Combined CSV should contain data from 2 sites, found $($uniqueSites.Count)" -ForegroundColor Yellow
 }
-$site1Files = Import-Csv (Join-Path $testdataFolder "test-site1.csv")
-$site2Files = Import-Csv (Join-Path $testdataFolder "test-site2.csv")
+
+# Split data by site (use first two unique sites if names don't match exactly)
+$site1Files = $allFiles | Where-Object { $_.SourceSite -eq $uniqueSites[0] }
+$site2Files = $allFiles | Where-Object { $_.SourceSite -eq $uniqueSites[1] }
+
+# Update site names and URLs from data if available
+if ($uniqueSites.Count -ge 2) {
+    $Site1Name = $uniqueSites[0]
+    $Site2Name = $uniqueSites[1]
+    $Site1Url = ($site1Files | Select-Object -First 1).SourceUrl
+    $Site2Url = ($site2Files | Select-Object -First 1).SourceUrl
+}
 
 Write-Host "  ${Site1Name}: $($site1Files.Count) files" -ForegroundColor Gray
 Write-Host "  ${Site2Name}: $($site2Files.Count) files" -ForegroundColor Gray

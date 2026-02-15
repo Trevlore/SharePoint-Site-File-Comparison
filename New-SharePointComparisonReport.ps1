@@ -31,7 +31,7 @@
     Path where the HTML report will be saved
 
 .EXAMPLE
-    New-SharePointComparisonReport -Site1Files $files1 -Site2Files $files2 -Site1Name "Production" -Site2Name "Archive" -OutputPath "report.html"
+    New-SharePointComparisonReport -Site1Files $files1 -Site2Files $files2 -Site1Name "Current Iteration" -Site2Name "Last Iteration" -OutputPath "report.html"
 #>
 
 function New-SharePointComparisonReport {

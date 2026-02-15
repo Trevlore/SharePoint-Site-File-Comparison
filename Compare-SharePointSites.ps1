@@ -74,9 +74,12 @@ if (-not (Test-Path $reportsFolder)) {
 # Generate timestamp for this run
 $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 
-# CSV files with timestamps
-$site1Csv = Join-Path $dataFolder "Site1_$timestamp.csv"
-$site2Csv = Join-Path $dataFolder "Site2_$timestamp.csv"
+# Temporary CSV files for individual site data
+$site1Csv = Join-Path $env:TEMP "temp_site1_$timestamp.csv"
+$site2Csv = Join-Path $env:TEMP "temp_site2_$timestamp.csv"
+
+# Combined CSV file with timestamp
+$combinedCsv = Join-Path $dataFolder "Comparison_$timestamp.csv"
 
 try {
     Write-Host "==========================================" -ForegroundColor Cyan
@@ -101,14 +104,30 @@ try {
         throw "Failed to retrieve files from $Site2Name"
     }
     
-    # Step 3: Load and compare files
-    Write-Host "`n[3/4] Comparing files..." -ForegroundColor Yellow
+    # Step 3: Combine data into single CSV
+    Write-Host "`n[3/4] Combining and saving data..." -ForegroundColor Yellow
     
     $site1Files = Import-Csv $site1Csv
     $site2Files = Import-Csv $site2Csv
     
     Write-Host "  ${Site1Name}: $($site1Files.Count) files" -ForegroundColor Gray
     Write-Host "  ${Site2Name}: $($site2Files.Count) files" -ForegroundColor Gray
+    
+    # Add SourceSite column to each dataset
+    $site1FilesWithSource = $site1Files | Select-Object *, @{Name='SourceSite';Expression={$Site1Name}}, @{Name='SourceUrl';Expression={$Site1Url}}
+    $site2FilesWithSource = $site2Files | Select-Object *, @{Name='SourceSite';Expression={$Site2Name}}, @{Name='SourceUrl';Expression={$Site2Url}}
+    
+    # Combine into single array
+    $allFiles = @()
+    $allFiles += $site1FilesWithSource
+    $allFiles += $site2FilesWithSource
+    
+    # Save combined data to CSV
+    $allFiles | Export-Csv -Path $combinedCsv -NoTypeInformation -Encoding UTF8
+    Write-Host "  Combined data saved: $combinedCsv" -ForegroundColor Gray
+    
+    # Step 4: Analyze comparison data
+    Write-Host "`n[4/5] Analyzing comparison..." -ForegroundColor Yellow
     
     # Create hashtables for quick lookup (using relative path as key)
     $site1Hash = @{}
@@ -162,8 +181,8 @@ try {
     Write-Host "  Only in ${Site2Name}: $($onlyInSite2.Count) files" -ForegroundColor Cyan
     Write-Host "  In both sites: $($inBothSites.Count) files" -ForegroundColor Cyan
     
-    # Step 4: Generate HTML report
-    Write-Host "`n[4/4] Generating HTML report..." -ForegroundColor Yellow
+    # Step 5: Generate HTML report
+    Write-Host "`n[5/5] Generating HTML report..." -ForegroundColor Yellow
     
     # Set output path with timestamp if not provided
     if ([string]::IsNullOrEmpty($OutputPath)) {
@@ -613,8 +632,9 @@ try {
     Write-Host "Report generated successfully!" -ForegroundColor Green
     Write-Host "==========================================" -ForegroundColor Green
     Write-Host "Report: $OutputPath" -ForegroundColor Cyan
-    Write-Host "Site 1 CSV: $site1Csv" -ForegroundColor Gray
-    Write-Host "Site 2 CSV: $site2Csv" -ForegroundColor Gray
+    Write-Host "Data: $combinedCsv" -ForegroundColor Cyan
+    Write-Host "  - ${Site1Name}: $($site1Files.Count) files" -ForegroundColor Gray
+    Write-Host "  - ${Site2Name}: $($site2Files.Count) files" -ForegroundColor Gray
     Write-Host "`nOpening report in default browser..." -ForegroundColor Gray
     
     # Open the report in default browser
@@ -625,6 +645,12 @@ try {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
 } finally {
-    # Note: CSV files are now saved in the Data folder for historical tracking
-    # They are not deleted
+    # Clean up temporary CSV files
+    if (Test-Path $site1Csv) {
+        Remove-Item $site1Csv -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $site2Csv) {
+        Remove-Item $site2Csv -Force -ErrorAction SilentlyContinue
+    }
+    # Combined CSV remains in Data folder for historical tracking
 }
