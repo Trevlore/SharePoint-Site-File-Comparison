@@ -49,13 +49,23 @@ param(
 # Get script directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $getFilesScript = Join-Path $scriptDir "Get-SharePointFiles.ps1"
+$initScript = Join-Path $scriptDir "Initialize-SharePointConnection.ps1"
 
-# Check if Get-SharePointFiles.ps1 exists
+# Check if required scripts exist
 if (-not (Test-Path $getFilesScript)) {
     Write-Host "Error: Get-SharePointFiles.ps1 not found in the script directory." -ForegroundColor Red
     Write-Host "Expected location: $getFilesScript" -ForegroundColor Yellow
     exit 1
 }
+
+if (-not (Test-Path $initScript)) {
+    Write-Host "Error: Initialize-SharePointConnection.ps1 not found in the script directory." -ForegroundColor Red
+    Write-Host "Expected location: $initScript" -ForegroundColor Yellow
+    exit 1
+}
+
+# Load the initialization script function
+. $initScript
 
 # Create folders for data and reports
 $dataFolder = Join-Path $scriptDir "Data"
@@ -86,26 +96,50 @@ try {
     Write-Host "SharePoint Sites Comparison Tool" -ForegroundColor Cyan
     Write-Host "==========================================" -ForegroundColor Cyan
     
-    # Step 1: Get files from Site 1
-    Write-Host "`n[1/4] Retrieving files from $Site1Name..." -ForegroundColor Yellow
+    # Step 1: Connect to Site 1 and get files
+    Write-Host "`n[1/5] Connecting to $Site1Name..." -ForegroundColor Yellow
     Write-Host "Site URL: $Site1Url" -ForegroundColor Gray
-    & $getFilesScript -SiteUrl $Site1Url -OutputPath $site1Csv
+    
+    try {
+        Initialize-SharePointConnection -SiteUrl $Site1Url
+    }
+    catch {
+        throw "Failed to connect to ${Site1Name}"
+    }
+    
+    Write-Host "`n[2/5] Retrieving files from $Site1Name..." -ForegroundColor Yellow
+    & $getFilesScript -SiteUrl $Site1Url -OutputPath $site1Csv -SkipConnection
     
     if (-not (Test-Path $site1Csv)) {
         throw "Failed to retrieve files from $Site1Name"
     }
     
-    # Step 2: Get files from Site 2
-    Write-Host "`n[2/4] Retrieving files from $Site2Name..." -ForegroundColor Yellow
+    # Disconnect from Site 1
+    Disconnect-PnPOnline -ErrorAction SilentlyContinue
+    
+    # Step 2: Connect to Site 2 and get files
+    Write-Host "`n[3/5] Connecting to $Site2Name..." -ForegroundColor Yellow
     Write-Host "Site URL: $Site2Url" -ForegroundColor Gray
-    & $getFilesScript -SiteUrl $Site2Url -OutputPath $site2Csv
+    
+    try {
+        Initialize-SharePointConnection -SiteUrl $Site2Url
+    }
+    catch {
+        throw "Failed to connect to ${Site2Name}"
+    }
+    
+    Write-Host "`n[4/5] Retrieving files from $Site2Name..." -ForegroundColor Yellow
+    & $getFilesScript -SiteUrl $Site2Url -OutputPath $site2Csv -SkipConnection
     
     if (-not (Test-Path $site2Csv)) {
         throw "Failed to retrieve files from $Site2Name"
     }
     
+    # Disconnect from Site 2
+    Disconnect-PnPOnline -ErrorAction SilentlyContinue
+    
     # Step 3: Combine data into single CSV
-    Write-Host "`n[3/4] Combining and saving data..." -ForegroundColor Yellow
+    Write-Host "`n[5/5] Combining and saving data..." -ForegroundColor Yellow
     
     $site1Files = Import-Csv $site1Csv
     $site2Files = Import-Csv $site2Csv
@@ -127,7 +161,7 @@ try {
     Write-Host "  Combined data saved: $combinedCsv" -ForegroundColor Gray
     
     # Step 4: Analyze comparison data
-    Write-Host "`n[4/5] Analyzing comparison..." -ForegroundColor Yellow
+    Write-Host "`nAnalyzing comparison..." -ForegroundColor Yellow
     
     # Create hashtables for quick lookup (using relative path as key)
     $site1Hash = @{}
@@ -182,7 +216,7 @@ try {
     Write-Host "  In both sites: $($inBothSites.Count) files" -ForegroundColor Cyan
     
     # Step 5: Generate HTML report
-    Write-Host "`n[5/5] Generating HTML report..." -ForegroundColor Yellow
+    Write-Host "`nGenerating HTML report..." -ForegroundColor Yellow
     
     # Set output path with timestamp if not provided
     if ([string]::IsNullOrEmpty($OutputPath)) {
@@ -652,5 +686,11 @@ try {
     if (Test-Path $site2Csv) {
         Remove-Item $site2Csv -Force -ErrorAction SilentlyContinue
     }
+    
+    # Ensure disconnection from SharePoint
+    try {
+        Disconnect-PnPOnline -ErrorAction SilentlyContinue
+    } catch {}
+    
     # Combined CSV remains in Data folder for historical tracking
 }

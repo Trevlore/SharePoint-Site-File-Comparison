@@ -25,17 +25,34 @@ param(
     [string]$SiteUrl,
     
     [Parameter(Mandatory=$false)]
-    [string]$OutputPath = "SharePointFiles.csv"
+    [string]$OutputPath = "SharePointFiles.csv",
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$SkipConnection
 )
 
-# Check if PnP.PowerShell module is installed
-if (-not (Get-Module -ListAvailable -Name PnP.PowerShell)) {
-    Write-Host "PnP.PowerShell module is not installed. Installing..." -ForegroundColor Yellow
-    Install-Module -Name PnP.PowerShell -Scope CurrentUser -Force
+# Initialize SharePoint connection (unless skipped by caller)
+if (-not $SkipConnection) {
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $initScript = Join-Path $scriptDir "Initialize-SharePointConnection.ps1"
+    
+    if (-not (Test-Path $initScript)) {
+        Write-Host "Error: Initialize-SharePointConnection.ps1 not found." -ForegroundColor Red
+        Write-Host "Expected location: $initScript" -ForegroundColor Yellow
+        exit 1
+    }
+    
+    # Dot-source the initialization script and call the function
+    . $initScript
+    
+    try {
+        Initialize-SharePointConnection -SiteUrl $SiteUrl
+    }
+    catch {
+        Write-Host "Failed to initialize SharePoint connection." -ForegroundColor Red
+        exit 1
+    }
 }
-
-# Import the module
-Import-Module PnP.PowerShell
 
 # Array to store file information
 $fileList = @()
@@ -81,11 +98,13 @@ function Get-FilesRecursively {
 }
 
 try {
-    # Connect to SharePoint Online (will prompt for credentials)
-    Write-Host "Connecting to SharePoint site: $SiteUrl" -ForegroundColor Cyan
-    Connect-PnPOnline -Url $SiteUrl -Interactive
+    # Connection is already established by Initialize-SharePointConnection
+    # Unless SkipConnection was specified (for when called from Compare script)
+    if ($SkipConnection) {
+        Write-Host "Using existing SharePoint connection..." -ForegroundColor Cyan
+    }
     
-    Write-Host "Connected successfully. Retrieving document libraries..." -ForegroundColor Green
+    Write-Host "Retrieving document libraries..." -ForegroundColor Cyan
     
     # Get all document libraries
     $lists = Get-PnPList | Where-Object { $_.BaseTemplate -eq 101 -and $_.Hidden -eq $false }
@@ -110,14 +129,18 @@ try {
         Write-Host "`nNo files found in the SharePoint site." -ForegroundColor Yellow
     }
     
-    # Disconnect
-    Disconnect-PnPOnline
+    # Disconnect (only if running standalone, not when called from Compare script)
+    if (-not $SkipConnection) {
+        Disconnect-PnPOnline
+    }
 }
 catch {
     Write-Host "Error: $_" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
 }
 finally {
-    # Ensure we disconnect even if there's an error
-    try { Disconnect-PnPOnline -ErrorAction SilentlyContinue } catch {}
+    # Ensure we disconnect even if there's an error (only for standalone runs)
+    if (-not $SkipConnection) {
+        try { Disconnect-PnPOnline -ErrorAction SilentlyContinue } catch {}
+    }
 }
